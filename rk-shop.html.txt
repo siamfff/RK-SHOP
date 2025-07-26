@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RK SHOP - User Panel</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, addDoc, collection, getDocs, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAWm_NqbAZK8T0i8rx7yu7X9YZzYEB6OIg",
+      authDomain: "rk-shop-40cd4.firebaseapp.com",
+      projectId: "rk-shop-40cd4"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const loginDiv = document.getElementById("login-form");
+    const panelDiv = document.getElementById("user-panel");
+    const balanceSpan = document.getElementById("wallet-balance");
+    const ordersTable = document.getElementById("my-orders");
+    let currentUser = null;
+    let currentBalance = 0;
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        currentUser = user;
+        loginDiv.classList.add("d-none");
+        panelDiv.classList.remove("d-none");
+        await loadWallet(user.uid);
+        loadOrders(user.uid);
+      } else {
+        currentUser = null;
+        loginDiv.classList.remove("d-none");
+        panelDiv.classList.add("d-none");
+      }
+    });
+
+    document.getElementById("register-btn").onclick = async () => {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+
+    document.getElementById("login-btn").onclick = async () => {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        alert(error.message);
+      }
+    };
+
+    document.getElementById("logout-btn").onclick = async () => {
+      await signOut(auth);
+    };
+
+    document.getElementById("recharge-btn").onclick = async () => {
+      const amount = parseInt(document.getElementById("recharge-amount").value);
+      const method = document.getElementById("recharge-method").value;
+      const trxid = document.getElementById("recharge-trxid").value;
+      const phone = document.getElementById("recharge-phone").value;
+      await addDoc(collection(db, "recharges"), {
+        uid: currentUser.uid,
+        email: currentUser.email,
+        amount,
+        method,
+        trxid,
+        phone,
+        status: "Pending",
+        time: serverTimestamp()
+      });
+      alert("Recharge Request Submitted");
+    };
+
+    document.getElementById("order-btn").onclick = async () => {
+      const ffUid = document.getElementById("ffUid").value;
+      const ffName = document.getElementById("ffName").value;
+      const phone = document.getElementById("order-phone").value;
+      const packageName = document.getElementById("package").value;
+      const method = document.getElementById("order-method").value;
+      const trxid = document.getElementById("order-trxid").value;
+
+      const priceMatch = packageName.match(/(\d+)৳/);
+      const price = priceMatch ? parseInt(priceMatch[1]) : 0;
+
+      if (method === "Wallet") {
+        if (currentBalance < price) {
+          alert("Insufficient Wallet Balance");
+          return;
+        } else {
+          const walletRef = doc(db, "wallets", currentUser.uid);
+          await updateDoc(walletRef, { balance: currentBalance - price });
+          currentBalance -= price;
+          balanceSpan.innerText = currentBalance + "৳";
+        }
+      }
+
+      await addDoc(collection(db, "orders"), {
+        uid: currentUser.uid,
+        ffUid,
+        ffName,
+        phone,
+        package: packageName,
+        method,
+        trxid,
+        status: "Pending",
+        time: serverTimestamp()
+      });
+      alert("Order Submitted");
+      loadOrders(currentUser.uid);
+    };
+
+    async function loadWallet(uid) {
+      const ref = doc(db, "wallets", uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        currentBalance = snap.data().balance || 0;
+      } else {
+        currentBalance = 0;
+      }
+      balanceSpan.innerText = currentBalance + "৳";
+    }
+
+    async function loadOrders(uid) {
+      const snap = await getDocs(collection(db, "orders"));
+      ordersTable.innerHTML = "";
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.uid === uid) {
+          ordersTable.innerHTML += `<tr>
+            <td>${data.ffUid}</td>
+            <td>${data.phone || ""}</td>
+            <td>${data.package}</td>
+            <td>${data.status}</td>
+          </tr>`;
+        }
+      });
+    }
+  </script>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <div id="login-form">
+      <h3>Login or Register</h3>
+      <input id="email" type="email" class="form-control mb-2" placeholder="Email">
+      <input id="password" type="password" class="form-control mb-2" placeholder="Password">
+      <button class="btn btn-primary" id="login-btn">Login</button>
+      <button class="btn btn-success" id="register-btn">Register</button>
+    </div>
+
+    <div id="user-panel" class="d-none">
+      <h3>Welcome to RK SHOP</h3>
+      <p class="text-danger">🔔 Only Nogod, Nogod Number: <strong>01682903058</strong></p>
+      <p class="text-info">💡 <strong>যাদের নিজের নগদ একাউন্ট নেই</strong>, তারা কাছের দোকান/নগদ এজেন্ট থেকে টাকা পাঠাতে পারবেন। <br>
+      🧾 এজেন্ট থেকে টাকা পাঠালে <strong>ট্রানজেকশন আইডি দিতে হবে না</strong>, শুধু <strong>"agent"</strong> লিখে দিলেই হবে ✅</p>
+      <p>Wallet Balance: <strong id="wallet-balance">0৳</strong></p>
+      <button class="btn btn-danger mb-4" id="logout-btn">Logout</button>
+
+      <h4>Recharge Wallet</h4>
+      <input id="recharge-amount" type="number" class="form-control mb-2" placeholder="Amount">
+      <select id="recharge-method" class="form-control mb-2">
+        <option value="Nagad">Nagad</option>
+      </select>
+      <input id="recharge-phone" class="form-control mb-2" placeholder="Phone Number">
+      <input id="recharge-trxid" class="form-control mb-2" placeholder="Transaction ID">
+      <button class="btn btn-primary mb-3" id="recharge-btn">Submit Recharge</button>
+
+      <h4>Order Diamonds</h4>
+      <input id="ffUid" class="form-control mb-2" placeholder="Free Fire UID">
+      <input id="ffName" class="form-control mb-2" placeholder="Free Fire Username">
+      <input id="order-phone" class="form-control mb-2" placeholder="Phone Number">
+      <select id="package" class="form-control mb-2">
+        <option value="Weekly Light = 50৳">Weekly Light = 50৳</option>
+        <option value="25 diamond = 24৳">25 diamond = 24৳</option>
+        <option value="50 diamond = 39৳">50 diamond = 39৳</option>
+        <option value="115 diamond = 77৳">115 diamond = 77৳</option>
+        <option value="240 diamond = 155৳">240 diamond = 155৳</option>
+        <option value="Weekly Membership = 160৳">Weekly Membership = 160৳</option>
+        <option value="Monthly Membership = 750৳">Monthly Membership = 750৳</option>
+      </select>
+      <select id="order-method" class="form-control mb-2">
+        <option value="Wallet">Wallet</option>
+        <option value="Nagad">Nagad</option>
+      </select>
+      <input id="order-trxid" class="form-control mb-2" placeholder="Transaction ID">
+      <button class="btn btn-success mb-3" id="order-btn">Submit Order</button>
+
+      <h4>📜 Your Orders</h4>
+      <table class="table table-bordered">
+        <thead><tr><th>FF UID</th><th>Phone</th><th>Package</th><th>Status</th></tr></thead>
+        <tbody id="my-orders"></tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
